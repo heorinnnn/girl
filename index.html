@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>피란소녀 인터랙티브 제스처</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background-color: #111;
+      color: #fff;
+      font-family: 'Pretendard', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    .container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      max-width: 1280px;
+      max-height: 720px;
+      background-color: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+      border-radius: 12px;
+    }
+    /* 맥북 웹캠 거울모드 */
+    #webcam {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+    #canvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .status-panel {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      padding: 12px 20px;
+      border-radius: 20px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      z-index: 10;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+  </style>
+
+  <!-- MediaPipe 라이브러리 -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+  <div class="container">
+    <video id="webcam" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+    <div class="status-panel" id="status">카메라 및 제스처 감지 준비 중...</div>
+  </div>
+
+  <script>
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const statusEl = document.getElementById('status');
+
+    // 이미지 로드
+    const images = {
+      pirangirl: new Image(),
+      pirangirlhappy: new Image(),
+      pirangirlsoso: new Image(),
+      pirangirlwithdad: new Image()
+    };
+
+    images.pirangirl.src = './pirangirl.png';
+    images.pirangirlhappy.src = './pirangirlhappy.png';
+    images.pirangirlsoso.src = './pirangirlsoso.png';
+    images.pirangirlwithdad.src = './pirangirlwithdad.png';
+
+    // 제스처 상태 관리
+    let activeGesture = null;
+    let lastGestureTime = 0;
+    const GESTURE_TIMEOUT = 1200;
+
+    let activeHandPosition = { x: 0, y: 0 };
+    let rightHandPosition = { x: 0, y: 0 };
+    let lastWristX = null;
+    let waveCount = 0;
+    let lastWaveTime = 0;
+
+    // MediaPipe Hands
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 0,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    // MediaPipe Pose
+    const pose = new Pose({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+    });
+    pose.setOptions({
+      modelComplexity: 0,
+      smoothLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    let currentPoseLandmarks = null;
+    let isProcessing = false;
+
+    hands.onResults((results) => {
+      detectHandGestures(results);
+    });
+
+    pose.onResults((results) => {
+      currentPoseLandmarks = results.poseLandmarks;
+      detectBodyGestures(results);
+      renderOverlay();
+      isProcessing = false;
+    });
+
+    function setGesture(gestureName) {
+      activeGesture = gestureName;
+      lastGestureTime = Date.now();
+    }
+
+    function detectHandGestures(results) {
+      if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
+
+      const now = Date.now();
+      let vHandCount = 0;
+      let isPalmOpenWaving = false;
+      let handPositions = [];
+
+      for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+        const landmarks = results.multiHandLandmarks[i];
+
+        const pos = {
+          x: (1 - landmarks[9].x) * canvasElement.width,
+          y: landmarks[9].y * canvasElement.height
+        };
+
+        activeHandPosition = pos;
+        handPositions.push(pos);
+
+        const indexOpen = landmarks[8].y < landmarks[6].y;
+        const middleOpen = landmarks[12].y < landmarks[10].y;
+        const ringOpen = landmarks[16].y < landmarks[14].y;
+        const pinkyOpen = landmarks[20].y < landmarks[18].y;
+
+        const isPalmOpen = indexOpen && middleOpen && ringOpen;
+        const isStrictV = indexOpen && middleOpen && !ringOpen && !pinkyOpen;
+
+        if (isStrictV) {
+          vHandCount++;
+        }
+
+        if (isPalmOpen) {
+          const wristX = landmarks[0].x;
+          if (lastWristX !== null) {
+            const deltaX = Math.abs(wristX - lastWristX);
+            if (deltaX > 0.012) {
+              waveCount++;
+              lastWaveTime = now;
+            }
+          }
+          lastWristX = wristX;
+
+          if (now - lastWaveTime > 500) {
+            waveCount = 0;
+          }
+
+          if (waveCount >= 2) {
+            isPalmOpenWaving = true;
+            waveCount = 0;
+          }
+        }
+      }
+
+      if (handPositions.length > 0) {
+        handPositions.sort((a, b) => b.x - a.x);
+        rightHandPosition = handPositions[0];
+      }
+
+      if (isPalmOpenWaving) {
+        setGesture('waving');
+      } else if (vHandCount === 2) {
+        setGesture('double_v');
+      } else if (vHandCount === 1) {
+        setGesture('v_sign');
+      }
+    }
+
+    function detectBodyGestures(results) {
+      if (!results.poseLandmarks) return;
+      const lm = results.poseLandmarks;
+
+      const leftShoulder = lm[11];
+      const rightShoulder = lm[12];
+      const leftWrist = lm[15];
+      const rightWrist = lm[16];
+
+      if (!leftShoulder || !rightShoulder || !leftWrist || !rightWrist) return;
+
+      const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x);
+      const handDistance = Math.abs(leftWrist.x - rightWrist.x);
+
+      if (handDistance > shoulderWidth * 2.0) {
+        setGesture('arms_open');
+      }
+    }
+
+    function renderOverlay() {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
+
+      const width = canvasElement.width;
+      const height = canvasElement.height;
+
+      canvasCtx.clearRect(0, 0, width, height);
+
+      if (Date.now() - lastGestureTime > GESTURE_TIMEOUT) {
+        activeGesture = null;
+      }
+
+      let personX = width / 2;
+      let personY = height / 2;
+
+      if (currentPoseLandmarks) {
+        const lShoulder = currentPoseLandmarks[11];
+        const rShoulder = currentPoseLandmarks[12];
+        personX = (1 - (lShoulder.x + rShoulder.x) / 2) * width;
+        personY = ((lShoulder.y + rShoulder.y) / 2) * height;
+      }
+
+      // 원래 적정 사이즈로 원복 (가로 px 기준)
+      if (activeGesture === 'v_sign') {
+        statusEl.innerText = "1번: 한손 브이 ✌️ -> 피란소녀 로고";
+        drawFollowImage(images.pirangirl, activeHandPosition.x, activeHandPosition.y - 70, width, height, 160);
+      } 
+      else if (activeGesture === 'double_v') {
+        statusEl.innerText = "2번: 양손 브이 ✌️️✌️ -> pirangirlhappy";
+        drawFollowImage(images.pirangirlhappy, rightHandPosition.x + 90, rightHandPosition.y, width, height, 220);
+      } 
+      else if (activeGesture === 'arms_open') {
+        statusEl.innerText = "3번: 양팔 넓게 펼치기 👐 -> pirangirlsoso";
+        drawFollowImage(images.pirangirlsoso, personX - 130, personY, width, height, 240);
+      } 
+      else if (activeGesture === 'waving') {
+        statusEl.innerText = "4번: 손바닥 펴고 흔들기 👋 -> 아코디언 아저씨";
+        drawFollowImage(images.pirangirlwithdad, activeHandPosition.x + 80, activeHandPosition.y, width, height, 250);
+      } 
+      else {
+        statusEl.innerText = "제스처 대기 중...";
+      }
+    }
+
+    function drawFollowImage(img, targetX, targetY, canvasWidth, canvasHeight, targetWidth) {
+      if (!img.complete || img.naturalWidth === 0) return;
+
+      const imgWidth = targetWidth;
+      const imgHeight = (img.height / img.width) * imgWidth;
+
+      let posX = targetX - (imgWidth / 2);
+      let posY = targetY - (imgHeight / 2);
+
+      if (posX + imgWidth > canvasWidth - 10) posX = canvasWidth - imgWidth - 10;
+      if (posX < 10) posX = 10;
+      if (posY + imgHeight > canvasHeight - 10) posY = canvasHeight - imgHeight - 10;
+      if (posY < 10) posY = 10;
+
+      canvasCtx.drawImage(img, posX, posY, imgWidth, imgHeight);
+    }
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        if (!isProcessing) {
+          isProcessing = true;
+          await hands.send({ image: videoElement });
+          await pose.send({ image: videoElement });
+        }
+      },
+      width: 640,
+      height: 480
+    });
+
+    camera.start();
+  </script>
+</body>
+</html>
