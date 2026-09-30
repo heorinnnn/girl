@@ -5,19 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>피란소녀 인터랙티브 제스처</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       background-color: #111;
       color: #fff;
       font-family: 'Pretendard', sans-serif;
       display: flex;
-      flex-direction: column;
-      align-items: center;
       justify-content: center;
+      align-items: center;
       min-height: 100vh;
       overflow: hidden;
     }
@@ -35,7 +30,6 @@
       box-shadow: 0 10px 30px rgba(0,0,0,0.8);
       border-radius: 12px;
     }
-    /* 맥북 웹캠 거울모드 */
     #webcam {
       position: absolute;
       width: 100%;
@@ -59,13 +53,11 @@
       border-radius: 20px;
       font-size: 15px;
       font-weight: 600;
-      letter-spacing: 0.5px;
       z-index: 10;
       border: 1px solid rgba(255,255,255,0.1);
     }
   </style>
 
-  <!-- MediaPipe 라이브러리 -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
@@ -73,9 +65,9 @@
 <body>
 
   <div class="container">
-    <video id="webcam" autoplay playsinline></video>
+    <video id="webcam" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
-    <div class="status-panel" id="status">카메라 및 제스처 감지 준비 중...</div>
+    <div class="status-panel" id="status">카메라 권한을 허용해 주세요...</div>
   </div>
 
   <script>
@@ -84,7 +76,6 @@
     const canvasCtx = canvasElement.getContext('2d');
     const statusEl = document.getElementById('status');
 
-    // 이미지 로드
     const images = {
       pirangirl: new Image(),
       pirangirlhappy: new Image(),
@@ -97,7 +88,6 @@
     images.pirangirlsoso.src = './pirangirlsoso.png';
     images.pirangirlwithdad.src = './pirangirlwithdad.png';
 
-    // 제스처 상태 관리
     let activeGesture = null;
     let lastGestureTime = 0;
     const GESTURE_TIMEOUT = 1200;
@@ -108,7 +98,6 @@
     let waveCount = 0;
     let lastWaveTime = 0;
 
-    // MediaPipe Hands
     const hands = new Hands({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
@@ -119,7 +108,6 @@
       minTrackingConfidence: 0.5
     });
 
-    // MediaPipe Pose
     const pose = new Pose({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
     });
@@ -133,10 +121,7 @@
     let currentPoseLandmarks = null;
     let isProcessing = false;
 
-    hands.onResults((results) => {
-      detectHandGestures(results);
-    });
-
+    hands.onResults((results) => { detectHandGestures(results); });
     pose.onResults((results) => {
       currentPoseLandmarks = results.poseLandmarks;
       detectBodyGestures(results);
@@ -159,7 +144,6 @@
 
       for (let i = 0; i < results.multiHandLandmarks.length; i++) {
         const landmarks = results.multiHandLandmarks[i];
-
         const pos = {
           x: (1 - landmarks[9].x) * canvasElement.width,
           y: landmarks[9].y * canvasElement.height
@@ -176,9 +160,7 @@
         const isPalmOpen = indexOpen && middleOpen && ringOpen;
         const isStrictV = indexOpen && middleOpen && !ringOpen && !pinkyOpen;
 
-        if (isStrictV) {
-          vHandCount++;
-        }
+        if (isStrictV) vHandCount++;
 
         if (isPalmOpen) {
           const wristX = landmarks[0].x;
@@ -191,9 +173,7 @@
           }
           lastWristX = wristX;
 
-          if (now - lastWaveTime > 500) {
-            waveCount = 0;
-          }
+          if (now - lastWaveTime > 500) waveCount = 0;
 
           if (waveCount >= 2) {
             isPalmOpenWaving = true;
@@ -207,19 +187,14 @@
         rightHandPosition = handPositions[0];
       }
 
-      if (isPalmOpenWaving) {
-        setGesture('waving');
-      } else if (vHandCount === 2) {
-        setGesture('double_v');
-      } else if (vHandCount === 1) {
-        setGesture('v_sign');
-      }
+      if (isPalmOpenWaving) setGesture('waving');
+      else if (vHandCount === 2) setGesture('double_v');
+      else if (vHandCount === 1) setGesture('v_sign');
     }
 
     function detectBodyGestures(results) {
       if (!results.poseLandmarks) return;
       const lm = results.poseLandmarks;
-
       const leftShoulder = lm[11];
       const rightShoulder = lm[12];
       const leftWrist = lm[15];
@@ -230,23 +205,18 @@
       const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x);
       const handDistance = Math.abs(leftWrist.x - rightWrist.x);
 
-      if (handDistance > shoulderWidth * 2.0) {
-        setGesture('arms_open');
-      }
+      if (handDistance > shoulderWidth * 2.0) setGesture('arms_open');
     }
 
     function renderOverlay() {
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
-
       const width = canvasElement.width;
       const height = canvasElement.height;
 
       canvasCtx.clearRect(0, 0, width, height);
 
-      if (Date.now() - lastGestureTime > GESTURE_TIMEOUT) {
-        activeGesture = null;
-      }
+      if (Date.now() - lastGestureTime > GESTURE_TIMEOUT) activeGesture = null;
 
       let personX = width / 2;
       let personY = height / 2;
@@ -258,34 +228,27 @@
         personY = ((lShoulder.y + rShoulder.y) / 2) * height;
       }
 
-      // 원래 적정 사이즈로 원복 (가로 px 기준)
       if (activeGesture === 'v_sign') {
         statusEl.innerText = "1번: 한손 브이 ✌️ -> 피란소녀 로고";
         drawFollowImage(images.pirangirl, activeHandPosition.x, activeHandPosition.y - 70, width, height, 160);
-      } 
-      else if (activeGesture === 'double_v') {
-        statusEl.innerText = "2번: 양손 브이 ✌️️✌️ -> pirangirlhappy";
+      } else if (activeGesture === 'double_v') {
+        statusEl.innerText = "2번: 양손 브이 ✌️✌️ -> pirangirlhappy";
         drawFollowImage(images.pirangirlhappy, rightHandPosition.x + 90, rightHandPosition.y, width, height, 220);
-      } 
-      else if (activeGesture === 'arms_open') {
+      } else if (activeGesture === 'arms_open') {
         statusEl.innerText = "3번: 양팔 넓게 펼치기 👐 -> pirangirlsoso";
         drawFollowImage(images.pirangirlsoso, personX - 130, personY, width, height, 240);
-      } 
-      else if (activeGesture === 'waving') {
+      } else if (activeGesture === 'waving') {
         statusEl.innerText = "4번: 손바닥 펴고 흔들기 👋 -> 아코디언 아저씨";
         drawFollowImage(images.pirangirlwithdad, activeHandPosition.x + 80, activeHandPosition.y, width, height, 250);
-      } 
-      else {
+      } else {
         statusEl.innerText = "제스처 대기 중...";
       }
     }
 
     function drawFollowImage(img, targetX, targetY, canvasWidth, canvasHeight, targetWidth) {
       if (!img.complete || img.naturalWidth === 0) return;
-
       const imgWidth = targetWidth;
       const imgHeight = (img.height / img.width) * imgWidth;
-
       let posX = targetX - (imgWidth / 2);
       let posY = targetY - (imgHeight / 2);
 
@@ -309,7 +272,11 @@
       height: 480
     });
 
-    camera.start();
+    camera.start().then(() => {
+      statusEl.innerText = "제스처 대기 중...";
+    }).catch(err => {
+      statusEl.innerText = "카메라를 연결할 수 없습니다.";
+    });
   </script>
 </body>
 </html>
